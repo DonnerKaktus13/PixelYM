@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Local asset backup (not source)
+IMG-backup/
+
+# Build output
+dist/
+dist-ssr/
+
+# Vite cache
+node_modules/.vite/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

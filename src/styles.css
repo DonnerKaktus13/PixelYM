@@ -1,0 +1,2036 @@
+:root {
+  color-scheme: dark;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; }
+body { background: #0a0d12; color: #e8eaed; }
+
+.app {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+
+.game-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: #0c1b2b;
+  image-rendering: auto;
+  cursor: crosshair;
+}
+
+.game-canvas.spawning { cursor: copy; }
+.game-canvas.attack { cursor: pointer; }
+
+.hud-top {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  padding: 10px 14px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.hud-bottom {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.panel {
+  background: rgba(12, 16, 22, 0.82);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  padding: 8px 12px;
+  backdrop-filter: blur(6px);
+  pointer-events: auto;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.panel.stats {
+  min-width: 220px;
+}
+
+.panel.leaderboard {
+  min-width: 220px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.leaderboard h3 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.leaderboard-row {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 3px 0;
+  font-size: 12px;
+}
+
+.leaderboard-row .swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+.leaderboard-row.you {
+  font-weight: 700;
+}
+
+.leaderboard-row.dead {
+  opacity: 0.4;
+  text-decoration: line-through;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-row .k {
+  opacity: 0.6;
+}
+
+.controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.controls button {
+  background: #1f6feb;
+  border: none;
+  color: white;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.controls button:hover { background: #2c7df0; }
+.controls button:disabled { background: #2a3138; cursor: not-allowed; opacity: 0.6; }
+
+.slider-panel {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 360px;
+}
+
+.slider-panel input[type="range"] {
+  flex: 1;
+  pointer-events: auto;
+}
+
+.slider-panel .pct {
+  min-width: 48px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.banner {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 20;
+}
+
+.banner .card {
+  background: rgba(12, 16, 22, 0.92);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  padding: 24px 30px;
+  text-align: center;
+  pointer-events: auto;
+  min-width: 320px;
+}
+
+.banner h1 { margin: 0 0 8px; font-size: 22px; }
+.banner p { margin: 0 0 16px; opacity: 0.8; font-size: 13px; }
+.banner button {
+  background: #1f6feb;
+  border: none;
+  color: white;
+  padding: 10px 18px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.hint {
+  position: absolute;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(12, 16, 22, 0.85);
+  border: 1px solid rgba(255,255,255,0.08);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Transient action-blocked notice (e.g. "Requires Pickaxe") — shown near
+   the top of the viewport with an attention-grabbing red tint so it
+   doesn't get confused with the spawn-mode hint. Auto-cleared after
+   ~2 s by the App. */
+.toast {
+  position: absolute;
+  top: 88px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(176, 58, 26, 0.95);
+  border: 1px solid rgba(255, 220, 180, 0.55);
+  color: #fff5e6;
+  padding: 10px 18px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+  z-index: 40;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55);
+  animation: toast-pop 0.18s ease-out;
+}
+@keyframes toast-pop {
+  from { opacity: 0; transform: translateX(-50%) translateY(-6px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+.loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  opacity: 0.7;
+}
+
+.menu-screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 35%, #1a2434 0%, #06090e 75%);
+}
+
+.menu-card {
+  background: rgba(12, 16, 22, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 32px 36px;
+  min-width: 360px;
+  max-width: 480px;
+  text-align: center;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+
+.menu-card.lobby-card {
+  min-width: 420px;
+}
+
+.menu-title {
+  margin: 0 0 8px;
+  font-size: 28px;
+  letter-spacing: 0.02em;
+}
+
+.menu-subtitle {
+  margin: 0 0 20px;
+  opacity: 0.7;
+  font-size: 13px;
+}
+
+.menu-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.menu-buttons.row {
+  flex-direction: row;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.menu-btn {
+  background: #1f2730;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e8eaed;
+  padding: 12px 18px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.menu-btn:hover:not(:disabled) {
+  background: #2a3340;
+}
+
+.menu-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.menu-btn.primary {
+  background: #1f6feb;
+  border-color: transparent;
+}
+
+.menu-btn.primary:hover:not(:disabled) {
+  background: #2c7df0;
+}
+
+/* Sub-label after the Resume button text (e.g. "saved 5 min ago"). */
+.menu-btn-sub {
+  font-weight: 400;
+  font-size: 11px;
+  opacity: 0.75;
+  margin-left: 6px;
+}
+
+/* HUD Save / Load buttons — small text pills stacked above the info-book
+   toggle. Main UI affordance is the bookblue toggle; these are quick
+   access for the persistence layer. */
+.save-btn {
+  position: absolute;
+  right: 22px;
+  background: rgba(12, 16, 22, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #e8eaed;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 12px;
+  cursor: pointer;
+  z-index: 13;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+}
+.save-btn:hover { background: #1f2730; }
+.save-btn.save { bottom: 296px; }
+.save-btn.load { bottom: 262px; }
+.save-btn.menu { bottom: 330px; }
+/* Auto-Assign sits above the menu button, with a green accent so it
+   reads as a "do something productive" action rather than navigation. */
+.save-btn.auto-assign {
+  bottom: 364px;
+  background: rgba(34, 90, 38, 0.92);
+  border-color: rgba(140, 220, 140, 0.4);
+}
+.save-btn.auto-assign:hover { background: #2c7a30; }
+/* "Centre on capital" navigation button. Blue accent so it reads as a
+   camera-jump, distinct from the green Auto-Assign action button. */
+.save-btn.capital {
+  bottom: 398px;
+  background: rgba(34, 60, 110, 0.92);
+  border-color: rgba(140, 180, 240, 0.4);
+}
+.save-btn.capital:hover { background: #2c4c8a; }
+
+.room-code-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 12px 0 18px;
+}
+
+.room-code {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 28px;
+  letter-spacing: 0.16em;
+  padding: 10px 18px;
+  background: #0a0d12;
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  color: #e8eaed;
+  cursor: pointer;
+}
+
+.room-code:hover {
+  background: #11161f;
+}
+
+.room-code-copied {
+  font-size: 12px;
+  color: #7ed3a0;
+}
+
+.qr-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: #0c1016;
+  border-radius: 10px;
+  margin: 0 auto;
+  width: max-content;
+}
+
+.lobby-status {
+  margin: 16px 0 0;
+  opacity: 0.7;
+  font-size: 12px;
+}
+
+.lobby-error {
+  margin: 10px 0 0;
+  color: #ff7676;
+  font-size: 12px;
+}
+
+.room-input {
+  width: 100%;
+  background: #0a0d12;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  color: #e8eaed;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 24px;
+  letter-spacing: 0.16em;
+  text-align: center;
+  padding: 12px;
+  outline: none;
+  text-transform: uppercase;
+}
+
+.room-input:focus {
+  border-color: #1f6feb;
+}
+
+/* --- Port / Airship Port dock window (opens on clicking the placed
+       structure in the world). Stub layout; populated with ship cards
+       once the user adds the ship sprites. --- */
+.port-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 6, 10, 0.55);
+  z-index: 25;
+  pointer-events: auto;
+}
+.port-panel {
+  width: min(80vw, 900px);
+  max-height: 80vh;
+  background: rgba(14, 18, 24, 0.96);
+  border: 1px solid rgba(120, 80, 40, 0.55);
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.port-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px;
+  background: rgba(38, 22, 10, 0.85);
+  border-bottom: 1px solid rgba(180, 140, 80, 0.35);
+}
+.port-header h2 {
+  margin: 0;
+  font-family: ui-serif, Georgia, serif;
+  font-size: 20px;
+  color: #ffe2a8;
+}
+.port-close {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid rgba(180, 140, 80, 0.45);
+  background: rgba(252, 240, 210, 0.12);
+  color: #f5e8d2;
+  font-size: 20px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.port-close:hover { background: rgba(252, 240, 210, 0.22); }
+.port-content {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 240px;
+}
+.port-empty {
+  font-style: italic;
+  opacity: 0.65;
+  text-align: center;
+  padding: 40px 16px;
+}
+
+.port-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 12px;
+}
+
+.port-card {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  background: rgba(252, 240, 210, 0.08);
+  border: 1px solid rgba(180, 140, 80, 0.35);
+  border-radius: 8px;
+  padding: 6px;
+  cursor: pointer;
+  transition: border-color 0.1s ease, background 0.1s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.port-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+.port-card:hover:not(:disabled) {
+  border-color: #ffe2a8;
+  background: rgba(252, 240, 210, 0.18);
+}
+.port-card.poor {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+/* Fallback shown when a card's sprite key hasn't been registered yet
+   (typical for the early tool catalog before PNGs are dropped in). */
+.port-card-blank {
+  font-family: ui-serif, Georgia, serif;
+  font-size: 28px;
+  font-weight: 700;
+  color: #ffe2a8;
+  opacity: 0.6;
+}
+/* Count badge in the top-right corner showing how many of this tool
+   the player has crafted so far. */
+.port-card-badge {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 11px;
+  background: rgba(180, 60, 30, 0.85);
+  color: #fff5e6;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tooltip pops above the card on hover. Same family as the BuildHUD
+   tip but a touch wider so longer ship descriptions don't wrap awkwardly. */
+.port-card-tip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 200px;
+  max-width: 280px;
+  background: rgba(28, 18, 10, 0.97);
+  color: #f5e8d2;
+  border: 1px solid rgba(180, 140, 80, 0.6);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.4;
+  z-index: 30;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.1s ease;
+  text-align: left;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.6);
+}
+.port-card:hover .port-card-tip { opacity: 1; }
+.port-tip-name {
+  font-family: ui-serif, Georgia, serif;
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 4px;
+  color: #ffe2a8;
+}
+.port-tip-desc {
+  margin-bottom: 6px;
+  opacity: 0.85;
+}
+.port-tip-cost {
+  font-weight: 600;
+  opacity: 0.95;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+}
+
+/* --- Craft book overlay (yellow for ships, red for tools). The dock
+       /workbench modal is rendered with the same open-book treatment as
+       the build menu but with its own tinted background. Cards sit over
+       the parchment pages; tooltip rules are reused from the BuildHUD
+       book card styles. --- */
+.craft-book-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 6, 10, 0.55);
+  z-index: 25;
+  pointer-events: auto;
+}
+.craft-book-panel {
+  position: relative;
+  /* Same aspect / max-width family as the BuildHUD's open book so the
+     two crafting books read as siblings. */
+  width: min(90vw, 1100px);
+  aspect-ratio: 11 / 10;
+  max-height: 90vh;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+}
+.craft-book-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+/* Card area sits over the spread, between the curved page-tops + the
+   wood book-stand. Same padding ratios as the BuildHUD book — tweak
+   here once the actual yellow / red art lands if their page regions
+   sit slightly differently. */
+.craft-book-pages {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  justify-content: center;
+  gap: 10px;
+  padding: 24% 13% 30%;
+  /* Hard-cap the page region so its children scroll inside the book
+     art rather than spilling over the page-flip chevrons + label. */
+  max-height: 100%;
+  overflow-y: auto;
+}
+.craft-book-empty {
+  font-style: italic;
+  opacity: 0.75;
+  text-align: center;
+  padding: 16px;
+  color: #3a2a18;
+}
+
+/* Crew widget that appears in the yellow ship book when the player
+   clicked an airship port. Shows the count of boarded villagers + a
+   "+ Board villager" button that calls boardVillagerInAirshipPort. */
+.craft-book-board-row {
+  width: 100%;
+  background: rgba(252, 240, 210, 0.55);
+  border: 1px solid rgba(120, 80, 40, 0.4);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #2a1d10;
+  font-size: 13px;
+  font-weight: 600;
+}
+.craft-book-board-btn {
+  background: #6b3a1a;
+  color: #fff5e6;
+  border: 1px solid #4a2810;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.craft-book-board-btn:hover { background: #8a4f24; }
+
+/* Per-vessel launch button on the Board page. Green to distinguish it
+   from the brown board-villager button. Disabled when crew isn't full. */
+.craft-book-launch-btn {
+  background: #2f6f2a;
+  color: #fff;
+  border: 1px solid #1f5018;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-left: 8px;
+}
+.craft-book-launch-btn:hover:not(:disabled) { background: #3c8a35; }
+.craft-book-launch-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* Page navigation chevrons + label for the 3-page port window. */
+.craft-book-nav {
+  position: absolute;
+  bottom: 4%;
+  background: rgba(120, 80, 40, 0.85);
+  border: 1px solid rgba(80, 50, 20, 0.6);
+  color: #fff5e0;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  font-size: 22px;
+  font-weight: 700;
+  cursor: pointer;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.craft-book-nav.prev { left: 6%; }
+.craft-book-nav.next { right: 6%; }
+.craft-book-nav:hover { background: #8a4f24; }
+.craft-book-nav:disabled { opacity: 0.35; cursor: not-allowed; }
+.craft-book-page-label {
+  position: absolute;
+  bottom: 5%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(252, 240, 210, 0.7);
+  border: 1px solid rgba(120, 80, 40, 0.5);
+  padding: 4px 12px;
+  border-radius: 14px;
+  color: #3a2818;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  z-index: 3;
+  pointer-events: none;
+}
+
+/* Board + cargo pages share a "parchment column" layout. */
+.craft-book-page-h3 {
+  margin: 0 0 8px;
+  font-family: ui-serif, Georgia, serif;
+  font-size: 20px;
+  text-align: center;
+  color: #3a2818;
+  letter-spacing: 0.04em;
+}
+.craft-book-board-page,
+.craft-book-cargo-page {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: #2c1d10;
+}
+.craft-book-vessel-list,
+.craft-book-vessel-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 32vh;
+  overflow-y: auto;
+}
+.craft-book-vessel-row,
+.craft-book-vessel-pick {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(252, 240, 210, 0.6);
+  border: 1px solid rgba(120, 80, 40, 0.4);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  color: inherit;
+  font-family: inherit;
+}
+.craft-book-vessel-pick:hover { background: rgba(252, 230, 180, 0.85); }
+.craft-book-vessel-pick.selected {
+  background: #d8c280;
+  border-color: #7d5028;
+}
+.craft-book-vessel-crew.short { color: #b03a1a; font-weight: 700; }
+.craft-book-cargo-fill { font-weight: 700; }
+
+.craft-book-cargo-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px dashed rgba(120, 80, 40, 0.4);
+  padding-top: 8px;
+}
+.craft-book-cargo-hdr {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+.craft-book-unload-btn {
+  background: #804020;
+  color: #fff5e0;
+  border: 1px solid #4f2510;
+  border-radius: 5px;
+  padding: 4px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.craft-book-unload-btn:hover:not(:disabled) { background: #9a5028; }
+.craft-book-unload-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.craft-book-cargo-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 32vh;
+  overflow-y: auto;
+}
+.craft-book-cargo-row {
+  display: grid;
+  grid-template-columns: 60px 70px 70px 32px 38px 44px;
+  gap: 4px;
+  align-items: center;
+  font-size: 11px;
+  background: rgba(252, 240, 210, 0.55);
+  border: 1px solid rgba(120, 80, 40, 0.3);
+  border-radius: 4px;
+  padding: 3px 6px;
+}
+.craft-book-cargo-name { font-weight: 700; }
+.craft-book-cargo-have { opacity: 0.7; }
+.craft-book-cargo-aboard { opacity: 0.8; color: #4a2a10; }
+.craft-book-cargo-row button {
+  background: #6b4222;
+  color: #fff5e0;
+  border: 1px solid #3d1f10;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 2px 0;
+}
+.craft-book-cargo-row button:hover:not(:disabled) { background: #8a5530; }
+.craft-book-cargo-row button:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* Page 4 — read-only cargo manifest list. Two columns: resource label
+   on the left, current amount aboard on the right. */
+.craft-book-manifest-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 30vh;
+  overflow-y: auto;
+  border-top: 1px dashed rgba(120, 80, 40, 0.4);
+  padding-top: 8px;
+}
+.craft-book-manifest-row {
+  display: flex;
+  justify-content: space-between;
+  background: rgba(252, 240, 210, 0.55);
+  border: 1px solid rgba(120, 80, 40, 0.3);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #2c1d10;
+}
+
+/* Per-card layout — square, sprite-only, hover tooltip identical to the
+   BuildHUD book cards. Background is parchment-cream rather than the
+   dark glass the old modal used. */
+.craft-book-card {
+  position: relative;
+  width: clamp(56px, 8vh, 96px);
+  height: clamp(56px, 8vh, 96px);
+  aspect-ratio: 1 / 1;
+  flex: 0 0 auto;
+  background: rgba(252, 240, 210, 0.55);
+  border: 1px solid rgba(120, 80, 40, 0.4);
+  border-radius: 6px;
+  padding: 4px;
+  cursor: pointer;
+  transition: border-color 0.1s ease, background 0.1s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.craft-book-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+.craft-book-card:hover:not(:disabled) {
+  border-color: #6b3a1a;
+  background: rgba(252, 240, 210, 0.92);
+}
+.craft-book-card.selected {
+  border-color: #b03a1a;
+  background: rgba(255, 220, 180, 0.95);
+  box-shadow: 0 0 0 2px rgba(176, 58, 26, 0.4);
+}
+.craft-book-card.poor { opacity: 0.45; cursor: not-allowed; }
+
+/* Owned-tool count badge — reused styling from .port-card-badge. */
+.craft-book-card-badge {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: rgba(180, 60, 30, 0.92);
+  color: #fff5e6;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
+  z-index: 2;
+}
+
+/* Hover tooltip — same look as .book-card-tip in the BuildHUD. */
+.craft-book-card-tip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 200px;
+  max-width: 280px;
+  background: rgba(28, 18, 10, 0.97);
+  color: #f5e8d2;
+  border: 1px solid rgba(180, 140, 80, 0.6);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.4;
+  z-index: 30;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.1s ease;
+  text-align: left;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.6);
+}
+.craft-book-card:hover .craft-book-card-tip { opacity: 1; }
+.craft-book-card-tip-name {
+  font-family: ui-serif, Georgia, serif;
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 3px;
+  color: #ffe2a8;
+}
+.craft-book-card-tip-desc {
+  margin-bottom: 6px;
+  opacity: 0.85;
+}
+.craft-book-card-tip-cost {
+  font-weight: 600;
+  opacity: 0.95;
+  font-size: 11px;
+}
+
+/* Close X — anchored on the spread's top-right corner, parchment-tinted
+   so it doesn't clash with whichever book color is shown. */
+.craft-book-close {
+  position: absolute;
+  top: 4%;
+  right: 6%;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(120, 80, 40, 0.5);
+  background: rgba(252, 240, 210, 0.88);
+  color: #2a1d10;
+  font-size: 22px;
+  font-weight: 700;
+  cursor: pointer;
+  z-index: 3;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.craft-book-close:hover { background: rgba(255, 220, 180, 1); }
+
+/* --- Status bar (top of viewport): resource pills + era / style. --- */
+.status-bar {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  padding: 8px 14px;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: auto;
+  z-index: 12;
+  background: linear-gradient(to bottom, rgba(8, 11, 16, 0.85), rgba(8, 11, 16, 0));
+}
+
+.status-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* --- Book toggle (closed) at bottom-right corner. 2× the previous icon
+       size so it reads as a real menu entry, not a tiny shortcut. --- */
+.book-toggle {
+  position: absolute;
+  bottom: 18px;
+  right: 18px;
+  width: 256px;
+  height: 256px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  pointer-events: auto;
+  z-index: 13;
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.6));
+  transition: transform 0.12s ease;
+}
+.book-toggle:hover { transform: scale(1.06); }
+.book-toggle.hidden { display: none; }
+.book-toggle img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: auto;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* --- Open-book overlay (modal). --- */
+.book-open-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 6, 10, 0.45);
+  z-index: 20;
+  pointer-events: auto;
+}
+
+.book-open-panel {
+  position: relative;
+  /* Aspect ratio matches the Bookopend.png art (~1.10 : 1). The cream
+     page area starts ~15% down and ends ~72% down — the wood book-
+     stand fills the lower quarter. */
+  width: min(92vw, 1200px);
+  aspect-ratio: 11 / 10;
+  max-height: 92vh;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+}
+
+.book-open-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Destroy-mode toggle anchored to the top-center of the open book art.
+   Picks a sentinel key that App.tsx routes to destroyStructure on the
+   next world click. Red-tinted so it stays distinct from the build
+   cards on the parchment pages. */
+.book-destroy-btn {
+  position: absolute;
+  top: 4%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  background: #6b2222;
+  color: #fff5e6;
+  border: 1px solid #4a1818;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+  transition: background 0.12s ease;
+}
+.book-destroy-btn:hover { background: #8a2c2c; }
+.book-destroy-btn.active {
+  background: #b03a1a;
+  box-shadow: 0 0 0 2px rgba(255, 200, 80, 0.45);
+}
+
+/* Farm-rectangle picker sits next to the Destroy button on the open-book
+   overlay. Earthy green so the player can tell the two modes apart at
+   a glance, and the same lift/active-glow as the destroy pill. */
+.book-farm-btn {
+  position: absolute;
+  top: 4%;
+  left: calc(50% + 110px);
+  transform: translateX(-50%);
+  z-index: 3;
+  background: #3a6b22;
+  color: #fff5e6;
+  border: 1px solid #1f3d12;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+}
+.book-farm-btn:hover { background: #4c8a2c; }
+.book-farm-btn.active {
+  background: #6cb03a;
+  box-shadow: 0 0 0 2px rgba(255, 200, 80, 0.45);
+}
+
+/* The two pages sit over the spread. Top padding clears BOTH the
+   curved page-tops AND the in-art labels ("Buildings", "transport",
+   "workbenches"), so cards start below them rather than on top of them.
+   Bottom padding clears the wood book-stand. Horizontal padding clears
+   the green book covers; column-gap aligns with the central binding. */
+.book-pages {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 8%;
+  padding: 24% 13% 30%;
+}
+
+/* Left page: Buildings (shelters) — shifted right by ~1 card-width so
+   the 3×2 grid sits inside the parchment vignette instead of drifting
+   over the book's spine binding. Card size is clamp(40px, 6vh, 72px)
+   so 6vh ≈ 1 icon width. */
+.book-buildings-col {
+  transform: translateX(6vh);
+}
+
+/* Right page: Transport only on page 0 now (the Workbench atlas moved
+   to its own page). User-tuned offsets: lifted up half a card and
+   pushed right by three card-widths so the cluster lands in the upper-
+   right vignette of Bookopend.png. */
+.book-right-col {
+  display: grid;
+  grid-template-rows: auto;
+  row-gap: 10%;
+  /* Card size = clamp(40px, 6vh, 72px). User asked to nudge the
+     transport widgets 1 length further left and 1 length up from the
+     previous translate(-3vh, 9vh): now translate(-9vh, 3vh). */
+  transform: translate(-9vh, 3vh);
+}
+
+.book-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.book-section h3 {
+  margin: 0;
+  font-family: ui-serif, Georgia, serif;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-align: center;
+  color: #3a2a18;
+  text-shadow: 0 1px 0 rgba(255, 240, 200, 0.4);
+}
+
+.book-empty {
+  font-size: 12px;
+  font-style: italic;
+  text-align: center;
+  color: rgba(60, 40, 20, 0.7);
+}
+
+.book-grid {
+  /* Single-column vertical stack — buildings read top-to-bottom like a
+     written list: tent / hut / hut / hut / outpost. */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  overflow: visible;
+  flex: 1;
+  padding: 2px;
+}
+
+/* 4-column grid override used for the workbenches section. Eight cards
+   then read as a clean 4×2 block instead of a long single column. */
+.book-grid.cols-4 {
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  grid-auto-rows: auto;
+  justify-content: center;
+  align-items: start;
+  gap: 6px;
+}
+
+/* 2-column variant used by the Transport section so its handful of
+   cards (raft, canoe, ...) lay out side-by-side instead of stacked. */
+.book-grid.cols-2 {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  grid-auto-rows: auto;
+  justify-content: center;
+  align-items: start;
+  gap: 6px;
+}
+
+/* 3-column variant used by Transport now that the section holds raft,
+   port, and airship_port. Lays them out as a single row of three. */
+.book-grid.cols-3 {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  grid-auto-rows: auto;
+  justify-content: center;
+  align-items: start;
+  gap: 6px;
+}
+
+/* Transport second-row lift — the user wants the second row of
+   transport cards just 1/5 of a length up (subtle overlap, not a
+   full row stack). Card height = 6vh → 6vh / 5 = 1.2vh.
+   cols-3 → row 2 starts at the 4th card; cols-4 → 5th card. */
+.book-right-col .book-grid.cols-3 > .book-card:nth-child(n+4) {
+  transform: translateY(-1.2vh);
+}
+.book-right-col .book-grid.cols-4 > .book-card:nth-child(n+5) {
+  transform: translateY(-1.2vh);
+}
+
+/* Wider grids for sections with many entries — workbenches grew from
+   8 to 14 with the mid-game mills + bakery + waterwheel, and transport
+   doubled once airship ports + shallow-water hut + trebuchet landed. */
+.book-grid.cols-5 {
+  display: grid;
+  grid-template-columns: repeat(5, auto);
+  grid-auto-rows: auto;
+  justify-content: center;
+  align-items: start;
+  gap: 6px;
+}
+.book-grid.cols-6 {
+  display: grid;
+  grid-template-columns: repeat(6, auto);
+  grid-auto-rows: auto;
+  justify-content: center;
+  align-items: start;
+  gap: 5px;
+}
+.book-grid.cols-7 {
+  display: grid;
+  grid-template-columns: repeat(7, auto);
+  grid-auto-rows: auto;
+  justify-content: center;
+  align-items: start;
+  gap: 5px;
+}
+.book-grid.cols-8 {
+  display: grid;
+  grid-template-columns: repeat(8, auto);
+  grid-auto-rows: auto;
+  justify-content: center;
+  align-items: start;
+  gap: 5px;
+}
+
+.book-card {
+  position: relative;
+  /* Scale with viewport height so the cards stay inside the cream page
+     area on smaller windows. clamp(min, preferred, max) keeps them
+     readable on big screens and avoids overflow on short ones. */
+  width: clamp(40px, 6vh, 72px);
+  height: clamp(40px, 6vh, 72px);
+  aspect-ratio: 1 / 1;
+  flex: 0 0 auto;
+  background: rgba(252, 240, 210, 0.55);
+  border: 1px solid rgba(120, 80, 40, 0.4);
+  border-radius: 6px;
+  padding: 4px;
+  cursor: pointer;
+  transition: border-color 0.1s ease, background 0.1s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.book-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+  image-rendering: auto;
+}
+.book-card:hover:not(:disabled) {
+  border-color: #6b3a1a;
+  background: rgba(252, 240, 210, 0.85);
+}
+.book-card.selected {
+  border-color: #b03a1a;
+  background: rgba(255, 220, 180, 0.9);
+  box-shadow: 0 0 0 2px rgba(176, 58, 26, 0.4);
+}
+.book-card.poor {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Hover tooltip — name + cost + description ("produces" line for
+   workbenches). Hidden by default, fades in over the card on hover. */
+.book-card-tip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 180px;
+  max-width: 240px;
+  background: rgba(28, 18, 10, 0.96);
+  color: #f5e8d2;
+  border: 1px solid rgba(180, 140, 80, 0.55);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.35;
+  z-index: 30;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.1s ease;
+  text-align: left;
+  white-space: normal;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+}
+.book-card:hover .book-card-tip { opacity: 1; }
+.book-card-tip-name {
+  font-family: ui-serif, Georgia, serif;
+  font-weight: 700;
+  font-size: 13px;
+  margin-bottom: 3px;
+  color: #ffe2a8;
+}
+.book-card-tip-cost {
+  opacity: 0.9;
+}
+.book-card-tip-prod {
+  margin-top: 4px;
+  font-style: italic;
+  opacity: 0.78;
+  font-size: 11px;
+}
+
+.book-close {
+  position: absolute;
+  top: 1%;
+  right: 2%;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(120, 80, 40, 0.5);
+  background: rgba(252, 240, 210, 0.85);
+  color: #2a1d10;
+  font-size: 22px;
+  font-weight: 700;
+  cursor: pointer;
+  z-index: 2;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
+.book-close:hover { background: rgba(255, 220, 180, 1); }
+
+/* Page 2 — dedicated workbench atlas. Anchored to the LEFT page of the
+   spread (right-padding ~50%) so the header text + button grid sit
+   over the left-page parchment instead of straddling the spine and
+   spilling off the right edge of the book art. */
+/* Anchored to the LEFT page of barrenpagestructures.png.
+   Image / panel maths:
+     - Panel aspect = 11:10 (wider than tall)
+     - Image aspect = 1:1 (the bg art is 1254×1254)
+     - With object-fit: contain, image height fills the panel, image
+       width = 10/11 of panel width → ~4.5% horizontal letterbox per
+       side.
+     - Image's LEFT parchment is at image-x ≈ 15%–49% (sampled), spine
+       at ~50%. Mapping image-x to panel-x: panel-x = 4.5% + 0.91 × image-x.
+       So left parchment in panel coords ≈ 19%–49%, spine at ~49%.
+     - Vertically the image fills the panel (no top/bottom letterbox at
+       this aspect), so y-percentages translate 1:1. Parchment runs
+       roughly y = 16%–80% with the page title strip at the top and
+       the book-stand at the bottom.
+   User-requested shift: nudge the whole content cluster toward the
+   TOP-RIGHT of the spread. Top padding shrinks (lift up), bottom grows
+   (compensate); left padding grows (push right onto the right page),
+   right padding shrinks (allow the content room on the right side).
+   New mapping: content sits roughly at panel-x 38%–68%, panel-y 11%–70%,
+   straddling the spine but heavier on the right parchment per the
+   "top right" direction. */
+/* Production page sits on the LEFT page (one book-page-width left of
+   the previous right-spread position) and a bit lower vertically so the
+   grid lands in the middle of the screen rather than hugging the top.
+   Mapping: content x = panel-x 19%–49% (left parchment), y = 24%–80%.
+   Mirrors the workbench placement so flipping between pair 2 and 3
+   keeps the cards in the same screen region. */
+.book-pages-production {
+  grid-template-columns: 1fr;
+  padding: 24% 51% 20% 19%;
+  transform: none;
+  align-content: start;
+  justify-items: center;
+}
+
+/* Workbenches now sits on the LEFT page (shifted one page-width to the
+   left vs. production) and a bit lower vertically so the grid lands in
+   the centre of the screen rather than hugging the top.
+   Mapping: content x = panel-x 19%–49% (left parchment), y = 24%–80%. */
+.book-pages-workbench {
+  grid-template-columns: 1fr;
+  padding: 24% 51% 20% 19%;
+  transform: none;
+  align-content: start;
+  justify-items: center;
+}
+
+/* "Workbenches" title text rendered above the 3x3 grid on page 2. */
+.workbench-header {
+  margin: 0 0 6px;
+  font-family: ui-serif, Georgia, serif;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-align: center;
+  color: #3a2a18;
+  text-shadow: 0 1px 0 rgba(255, 240, 200, 0.4);
+}
+
+/* Prev / next chevrons for the page-flip. Sit in the bottom outer
+   corners of the spread, styled like the close button (parchment +
+   warm brown border) so they read as book navigation, not generic UI. */
+.book-nav {
+  position: absolute;
+  bottom: 6%;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid rgba(120, 80, 40, 0.5);
+  background: rgba(252, 240, 210, 0.85);
+  color: #2a1d10;
+  font-size: 28px;
+  font-weight: 700;
+  cursor: pointer;
+  z-index: 3;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
+.book-nav:hover:not(:disabled) { background: rgba(255, 220, 180, 1); }
+.book-nav:disabled { opacity: 0.35; cursor: not-allowed; }
+.book-nav.prev { left: 6%; }
+.book-nav.next { right: 6%; }
+/* Centre page indicator. */
+.book-page-label {
+  position: absolute;
+  bottom: 7%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(252, 240, 210, 0.85);
+  border: 1px solid rgba(120, 80, 40, 0.45);
+  color: #2a1d10;
+  padding: 3px 12px;
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 700;
+  pointer-events: none;
+  z-index: 3;
+  white-space: nowrap;
+}
+
+/* Legacy build-hud class kept for backward compat with any lingering
+   references — collapses to nothing if used. */
+.build-hud { display: none; }
+
+.resource-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.res-pill {
+  background: rgba(12, 16, 22, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+  min-width: 64px;
+}
+.res-pill .k {
+  opacity: 0.55;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10px;
+}
+/* Per-resource left-edge accent so the eye can group them quickly. */
+.res-wood       { border-left: 3px solid #8b6a3a; }
+.res-rock       { border-left: 3px solid #7a7a7a; }
+.res-iron       { border-left: 3px solid #b0b0c8; }
+.res-gold       { border-left: 3px solid #e0c45a; }
+.res-diamond    { border-left: 3px solid #9be4ff; }
+.res-redcrystal { border-left: 3px solid #e6515a; }
+.res-bluecrystal{ border-left: 3px solid #5aa8e6; }
+.res-uranium    { border-left: 3px solid #6cdf6c; }
+.res-redberry   { border-left: 3px solid #c84040; }
+.res-yellowberry{ border-left: 3px solid #f1d055; }
+.res-blueberry  { border-left: 3px solid #6a78d4; }
+.res-mushroom   { border-left: 3px solid #c285c0; }
+.res-leaves     { border-left: 3px solid #6cb45c; }
+.res-ash        { border-left: 3px solid #555a62; }
+.res-meat       { border-left: 3px solid #b04040; }
+.res-unpreped_meat { border-left: 3px solid #884444; }
+.res-wheat          { border-left: 3px solid #c89c4a; }
+.res-processedfruit { border-left: 3px solid #b25aa0; }
+.res-bread          { border-left: 3px solid #8b5a30; }
+
+.build-stats {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.stat-pill {
+  background: rgba(12, 16, 22, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 12px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.stat-pill .k {
+  opacity: 0.55;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+}
+
+.cancel-btn {
+  background: #6b2222;
+  border: none;
+  color: #f7d8d8;
+  padding: 5px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cancel-btn:hover { background: #843535; }
+
+.build-categories {
+  display: flex;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+.build-category h4 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.55;
+}
+
+.build-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(94px, 1fr));
+  gap: 6px;
+}
+
+.build-card {
+  background: rgba(12, 16, 22, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: #e8eaed;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.1s ease, background 0.1s ease;
+}
+.build-card:hover:not(:disabled) {
+  border-color: rgba(31, 111, 235, 0.6);
+  background: rgba(20, 28, 40, 0.95);
+}
+.build-card.selected {
+  border-color: #1f6feb;
+  background: rgba(31, 111, 235, 0.22);
+}
+.build-card.poor { opacity: 0.45; cursor: not-allowed; }
+.build-card-label { font-weight: 600; margin-bottom: 2px; }
+.build-card-cost { opacity: 0.6; font-size: 11px; }
+
+/* --- Info book (non-immersive stats / diplomacy overlay). --- */
+/* --- Info Book (blue book). Opened by clicking the closed-book icon
+       below the build book; rendered as an actual book overlay using
+       the bookblueopend art with a 3-frame page-flip animation. --- */
+.info-book-toggle {
+  position: absolute;
+  bottom: 18px;
+  right: 286px; /* sits just left of the closed BuildHUD book toggle */
+  width: 256px;
+  height: 256px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  z-index: 13;
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.55));
+  transition: transform 0.12s ease;
+}
+.info-book-toggle:hover { transform: scale(1.06); }
+.info-book-toggle img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+.info-book-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(4, 6, 10, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 30;
+  pointer-events: auto;
+}
+.info-book-panel {
+  position: relative;
+  /* Match the bookblueopend.png proportions (~4:3). Was 11/10 — too
+     square — so the parchment percentage landed off the art. */
+  width: min(92vw, 1200px);
+  aspect-ratio: 4 / 3;
+  max-height: 90vh;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+}
+.info-book-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* `fill` instead of `contain` so the book PNG exactly maps the panel
+     bounds — otherwise letterboxing made the parchment area drift away
+     from the percentage paddings we use for `.info-book-pages`, leaving
+     text rendered over the surrounding overlay rather than the book. */
+  object-fit: fill;
+  pointer-events: none;
+  user-select: none;
+}
+.info-book-pages {
+  position: absolute;
+  /* Anchor the parchment-text frame inside the book art. Numbers are
+     percentages of the panel and were tuned against bookblueopend.png:
+     top edge of cream parchment ≈ 22% from top (nudged down from 16
+     so the header sits below the curved page-top instead of clipping
+     into it), side covers ≈ 18%, wood book-stand below parchment ≈
+     44%. */
+  top: 22%;
+  left: 18%;
+  right: 18%;
+  bottom: 44%;
+  z-index: 1;
+  /* Padding is now zero — the top/left/right/bottom anchors above pin
+     the content frame inside the parchment region directly, so the old
+     percentage padding would compound and shrink the box too much. */
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.info-book-spread {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  /* Visible binding sits about 4% wide at centre — gap straddles it. */
+  gap: 5%;
+  flex: 1;
+  min-height: 0;
+}
+.info-book-page {
+  /* No scroll bars in the book; instead the layout sizes content to fit
+     and any incidental overflow is clipped at the parchment edge. */
+  overflow: hidden;
+  padding: 2px 4px;
+  color: #1f2740;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.info-book-page h3 {
+  margin: 0 0 4px;
+  font-family: ui-serif, Georgia, serif;
+  font-size: 13px;
+  color: #2a3460;
+  text-align: center;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid rgba(40, 60, 110, 0.25);
+  padding-bottom: 2px;
+}
+.info-book-page .info-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10.5px;
+  line-height: 1.15;
+}
+.info-book-page .info-table th {
+  text-align: left;
+  opacity: 0.55;
+  font-weight: 600;
+  padding: 2px 4px;
+  font-size: 10px;
+  color: #2a3460;
+}
+.info-book-page .info-table td { padding: 1px 4px; vertical-align: middle; color: #1f2740; }
+.info-book-page .info-table .k { opacity: 0.78; }
+.info-book-page .info-table .v { font-variant-numeric: tabular-nums; text-align: right; font-weight: 600; }
+.info-book-page .info-table .pv { font-variant-numeric: tabular-nums; text-align: right; color: #1a6b3a; min-width: 44px; font-size: 10px; }
+.info-book-page .info-table .info-btn {
+  font-size: 9.5px;
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.info-book-page .info-tip {
+  font-size: 9.5px;
+  opacity: 0.7;
+  margin: 2px 0 4px;
+  line-height: 1.25;
+  font-style: italic;
+  color: #2a3460;
+}
+/* Total row separator a little tighter. */
+.info-book-page .info-table .info-total td {
+  border-top: 1px solid rgba(40, 60, 110, 0.25);
+  padding-top: 2px;
+  font-weight: 700;
+}
+
+/* Page nav arrows live in the wooden book-stand area at the bottom of
+   the spread (bottom ~20% from container bottom — clear of the cream
+   parchment but still visually anchored to the book). */
+.info-book-nav {
+  position: absolute;
+  bottom: 22%;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(232, 234, 242, 0.92);
+  color: #1c2a55;
+  border: 2px solid rgba(40, 60, 110, 0.5);
+  font-size: 26px;
+  font-weight: 700;
+  cursor: pointer;
+  z-index: 2;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+.info-book-nav:hover { background: #fff; }
+.info-book-nav.prev { left: 8%; }
+.info-book-nav.next { right: 8%; }
+.info-book-page-label {
+  position: absolute;
+  bottom: 9%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  font-family: ui-serif, Georgia, serif;
+  font-size: 13px;
+  color: #ffe2a8;
+  font-style: italic;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+}
+.info-book-close {
+  position: absolute;
+  top: 4%;
+  right: 6%;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(40, 60, 110, 0.4);
+  background: rgba(232, 234, 242, 0.88);
+  color: #2a3460;
+  font-size: 22px;
+  font-weight: 700;
+  cursor: pointer;
+  z-index: 3;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.info-book-close:hover { background: #fff; }
+
+/* Legacy 3-column grid no longer used — kept hidden to avoid stale
+   styles bleeding into the new book layout. */
+.info-book-head { display: none; }
+.info-book-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.info-card { background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 10px; padding: 12px 14px; }
+.info-card.wide { grid-column: 1 / -1; }
+.info-card h3 { margin: 0 0 10px; font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.7; }
+.info-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.info-table th { text-align: left; opacity: 0.5; font-weight: 500; padding: 4px 6px; }
+.info-table td { padding: 3px 6px; vertical-align: middle; }
+.info-table .k { opacity: 0.7; }
+.info-table .v { font-variant-numeric: tabular-nums; text-align: right; }
+.info-table .pv { font-variant-numeric: tabular-nums; text-align: right; color: #7ed3a0; min-width: 64px; }
+.info-table .info-total td { border-top: 1px solid rgba(255,255,255,0.08); font-weight: 600; }
+.info-tip { font-size: 11px; opacity: 0.55; margin: 4px 0 10px; line-height: 1.4; }
+.rel-war { color: #ff7676; font-weight: 700; }
+.rel-truce { color: #7ed3a0; }
+.rel-ally { color: #6cc1ff; font-weight: 700; }
+.rel-neutral { opacity: 0.55; }
+.info-btn { border: 1px solid rgba(255, 255, 255, 0.14); background: #1c232c; color: #e8eaed; border-radius: 6px; padding: 4px 10px; font-size: 11px; cursor: pointer; }
+.info-btn:hover { background: #2a3340; }
+.info-btn.war { color: #ff9090; border-color: rgba(255, 100, 100, 0.3); }
+.info-btn.truce { color: #9ad8b8; border-color: rgba(120, 220, 160, 0.3); }
+.info-btn.ally { color: #9cc7ff; border-color: rgba(140, 200, 255, 0.3); }
+
+/* --- Developer / debug panel (Ctrl + Ä). Orange-accented so it never
+       reads as in-world UI. Designed for fast clicks across every
+       gameplay system. --- */
+.dev-panel-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(2, 4, 8, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+  pointer-events: auto;
+}
+.dev-panel {
+  width: min(94vw, 1100px);
+  max-height: 88vh;
+  overflow-y: auto;
+  background: #11151b;
+  border: 1px solid #ff9c4a;
+  border-radius: 10px;
+  padding: 16px 20px;
+  color: #e8eaed;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.6);
+}
+.dev-panel-head { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; }
+.dev-panel-head h2 { margin: 0; font-size: 16px; color: #ff9c4a; letter-spacing: 0.04em; }
+.dev-panel-hint { font-size: 11px; opacity: 0.55; flex: 1; }
+.dev-panel-close { background: transparent; border: none; color: #e8eaed; font-size: 22px; line-height: 1; cursor: pointer; }
+.dev-section { border-top: 1px solid rgba(255, 255, 255, 0.08); padding: 10px 0; }
+.dev-section h3 { margin: 0 0 6px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.55; }
+.dev-row { display: flex; gap: 6px; align-items: center; }
+.dev-row-wrap { flex-wrap: wrap; }
+.dev-panel button {
+  background: #1c232c;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #e8eaed;
+  padding: 5px 10px;
+  border-radius: 5px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.dev-panel button:hover { background: #283340; border-color: #ff9c4a; }
+.dev-rel { font-size: 10px; opacity: 0.65; margin-left: 4px; }
+
+/* --- Selected-villager card. Pinned to the left edge of the viewport
+       whenever the player has clicked one of their villagers. Shows the
+       villager's portrait, name, role, and current animation/job label.
+       A big red X in the top corner clears the selection. --- */
+.selected-villager-card {
+  position: absolute;
+  left: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 200px;
+  background: rgba(12, 16, 22, 0.94);
+  border: 2px solid rgba(255, 220, 180, 0.4);
+  border-radius: 10px;
+  padding: 14px 12px 12px;
+  z-index: 20;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  color: #f1e8d4;
+  font-family: inherit;
+}
+.selected-villager-portrait {
+  width: 120px;
+  height: 120px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+.selected-villager-portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+  user-select: none;
+}
+.selected-villager-name {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #fff5e0;
+}
+.selected-villager-role {
+  font-size: 11px;
+  opacity: 0.7;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-top: 2px;
+}
+.selected-villager-job {
+  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  background: rgba(255, 220, 180, 0.12);
+  border: 1px solid rgba(255, 220, 180, 0.25);
+  border-radius: 6px;
+  padding: 4px 10px;
+  color: #ffe3b8;
+}
+.selected-villager-carry {
+  margin-top: 6px;
+  font-size: 11px;
+  opacity: 0.7;
+}
+.selected-villager-explain {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: rgba(241, 232, 212, 0.78);
+  font-style: italic;
+}
+.selected-villager-stop {
+  margin-top: 12px;
+  align-self: stretch;
+  background: #5a2a2a;
+  border: 1px solid rgba(255, 220, 180, 0.4);
+  color: #fff5e0;
+  padding: 7px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.1s ease, transform 0.1s ease;
+}
+.selected-villager-stop:hover:not(:disabled) {
+  background: #8b3a2f;
+}
+.selected-villager-stop:active:not(:disabled) { transform: scale(0.97); }
+.selected-villager-stop:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.selected-villager-x {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid #fff5e0;
+  background: #c0392b;
+  color: #fff;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.55);
+  transition: transform 0.1s ease, background 0.1s ease;
+}
+.selected-villager-x:hover {
+  background: #e74c3c;
+  transform: scale(1.08);
+}
+.selected-villager-x:active { transform: scale(0.95); }
