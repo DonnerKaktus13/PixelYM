@@ -1162,13 +1162,15 @@ export function App() {
       )}
       {error && <div className="loading">Error: {error}</div>}
       {phase === "loading" && !error && <div className="loading">Generating world…</div>}
-      {phase === "spawn" && !error && (
+      {phase === "spawn" && !error && !threeD && (
         <div className="hint">
           Click on land to plant your founding tent —
           {" "}auto-spawn in {formatCountdown(spawnSecondsLeft)}
         </div>
       )}
-      {phase === "playing" && stateRef.current && (
+      {/* The 2D game HUD is hidden while the 3D world view is active so the
+          terrain reads cleanly; the floating 2D/3D toggle stays on top. */}
+      {phase === "playing" && !threeD && stateRef.current && (
         <>
         <BuildHUD
           state={stateRef.current}

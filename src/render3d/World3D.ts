@@ -69,6 +69,13 @@ export class World3DView {
   private water: THREE.Mesh | null = null;
   private structureGroup: THREE.Group = new THREE.Group();
   private structureGeo = new THREE.BoxGeometry(1.7, 1, 1.7);
+  // Villagers as instanced cones (one draw call), coloured per tribe and
+  // updated every frame so the world visibly moves in 3D.
+  private villagerGeo = new THREE.ConeGeometry(0.5, 1.7, 6);
+  private villagerMesh!: THREE.InstancedMesh;
+  private dummy = new THREE.Object3D();
+  private tmpColor = new THREE.Color();
+  private static readonly MAX_VILLAGERS = 4000;
 
   // Orbit camera state (spherical around `target`).
   private target = new THREE.Vector3(0, 1.5, 0);
@@ -111,6 +118,12 @@ export class World3DView {
     this.scene.add(fill);
 
     this.scene.add(this.structureGroup);
+
+    const vmat = new THREE.MeshStandardMaterial({ roughness: 0.55, metalness: 0.05 });
+    this.villagerMesh = new THREE.InstancedMesh(this.villagerGeo, vmat, World3DView.MAX_VILLAGERS);
+    this.villagerMesh.count = 0;
+    this.villagerMesh.frustumCulled = false;
+    this.scene.add(this.villagerMesh);
 
     // Orbit controls — lightweight, self-contained (no OrbitControls import).
     this.onPointerDown = (e) => {
@@ -203,6 +216,32 @@ export class World3DView {
     return h;
   }
 
+  /** Area-average a grid cell instead of point-sampling one tile. Each mesh
+   *  cell covers ~27×27 world tiles; a lone Mountain tile among Land tiles
+   *  would otherwise spike into a needle. Averaging a STEPS×STEPS subgrid
+   *  is a mip-map downsample — isolated peaks melt into gentle bumps while
+   *  dense ranges stay tall, and territory/biome colours blend at edges. */
+  private sampleRegion(
+    state: GameState, txC: number, tyC: number, halfX: number, halfY: number, out: RGB,
+  ): number {
+    const w = state.world;
+    const STEPS = 4;
+    const tmp: RGB = [0, 0, 0];
+    let hSum = 0, r = 0, g = 0, b = 0, n = 0;
+    for (let a = 0; a < STEPS; a++) {
+      const fx = a / (STEPS - 1);
+      const tx = Math.max(0, Math.min(w.width - 1, Math.round(txC + (fx - 0.5) * 2 * halfX)));
+      for (let bStep = 0; bStep < STEPS; bStep++) {
+        const fy = bStep / (STEPS - 1);
+        const ty = Math.max(0, Math.min(w.height - 1, Math.round(tyC + (fy - 0.5) * 2 * halfY)));
+        hSum += this.sample(state, tx, ty, tmp);
+        r += tmp[0]; g += tmp[1]; b += tmp[2]; n++;
+      }
+    }
+    out[0] = r / n; out[1] = g / n; out[2] = b / n;
+    return hSum / n;
+  }
+
   /** Build (or rebuild) the whole scene from the given state. */
   build(state: GameState): void {
     const w = state.world;
@@ -215,14 +254,16 @@ export class World3DView {
     const colors = new Float32Array(cols * rows * 3);
     const rgb: RGB = [0, 0, 0];
 
+    const halfX = w.width / (cols - 1) / 2;
+    const halfY = w.height / (rows - 1) / 2;
     for (let j = 0; j < rows; j++) {
       const tv = j / (rows - 1);
-      const ty = Math.min(w.height - 1, Math.round(tv * (w.height - 1)));
+      const tyC = tv * (w.height - 1);
       const z = (tv - 0.5) * this.meshD;
       for (let i = 0; i < cols; i++) {
         const tu = i / (cols - 1);
-        const tx = Math.min(w.width - 1, Math.round(tu * (w.width - 1)));
-        const h = this.sample(state, tx, ty, rgb);
+        const txC = tu * (w.width - 1);
+        const h = this.sampleRegion(state, txC, tyC, halfX, halfY, rgb);
         const vi = (j * cols + i) * 3;
         positions[vi] = (tu - 0.5) * MESH_W;
         positions[vi + 1] = h * VSCALE;
@@ -320,11 +361,13 @@ export class World3DView {
     const attr = this.terrainGeo.getAttribute("color") as THREE.BufferAttribute;
     const colors = attr.array as Float32Array;
     const rgb: RGB = [0, 0, 0];
+    const halfX = w.width / (cols - 1) / 2;
+    const halfY = w.height / (rows - 1) / 2;
     for (let j = 0; j < rows; j++) {
-      const ty = Math.min(w.height - 1, Math.round((j / (rows - 1)) * (w.height - 1)));
+      const tyC = (j / (rows - 1)) * (w.height - 1);
       for (let i = 0; i < cols; i++) {
-        const tx = Math.min(w.width - 1, Math.round((i / (cols - 1)) * (w.width - 1)));
-        this.sample(state, tx, ty, rgb);
+        const txC = (i / (cols - 1)) * (w.width - 1);
+        this.sampleRegion(state, txC, tyC, halfX, halfY, rgb);
         const vi = (j * cols + i) * 3;
         colors[vi] = rgb[0] / 255;
         colors[vi + 1] = rgb[1] / 255;
@@ -333,6 +376,37 @@ export class World3DView {
     }
     attr.needsUpdate = true;
     this.buildStructures(state);
+  }
+
+  /** Push live villager positions into the instanced cone mesh. Cheap enough
+   *  (one terrain sample per villager) to run every frame, so units glide
+   *  across the terrain as the simulation ticks underneath. Boarded villagers
+   *  (inside a structure) are skipped. */
+  private updateVillagers(state: GameState): void {
+    const w = state.world;
+    const villagers = state.villagers ?? [];
+    const rgb: RGB = [0, 0, 0];
+    let n = 0;
+    for (let i = 0; i < villagers.length && n < World3DView.MAX_VILLAGERS; i++) {
+      const v = villagers[i];
+      if (v.insideStructureId != null) continue;
+      const tx = Math.max(0, Math.min(w.width - 1, Math.round(v.x)));
+      const ty = Math.max(0, Math.min(w.height - 1, Math.round(v.y)));
+      const terrainH = this.sample(state, tx, ty, rgb) * VSCALE;
+      const px = (v.x / w.width - 0.5) * MESH_W;
+      const pz = (v.y / w.height - 0.5) * this.meshD;
+      this.dummy.position.set(px, Math.max(0.3, terrainH) + 0.85, pz);
+      this.dummy.rotation.set(0, 0, 0);
+      this.dummy.updateMatrix();
+      this.villagerMesh.setMatrixAt(n, this.dummy.matrix);
+      const p = state.players[v.ownerId];
+      this.tmpColor.set(p ? p.colorRgb : 0xffffff);
+      this.villagerMesh.setColorAt(n, this.tmpColor);
+      n++;
+    }
+    this.villagerMesh.count = n;
+    this.villagerMesh.instanceMatrix.needsUpdate = true;
+    if (this.villagerMesh.instanceColor) this.villagerMesh.instanceColor.needsUpdate = true;
   }
 
   render(state: GameState, now: number): void {
@@ -344,6 +418,8 @@ export class World3DView {
       this.refreshColors(state);
       this.lastColorRefresh = now;
     }
+    // Villager markers move every frame with the live simulation.
+    this.updateVillagers(state);
 
     // Gentle auto-orbit until the user grabs the camera — makes the 3D
     // relief obvious at a glance (and gives a lively first screenshot).
@@ -367,6 +443,7 @@ export class World3DView {
     this.canvas.removeEventListener("wheel", this.onWheel);
     this.terrainGeo?.dispose();
     this.structureGeo.dispose();
+    this.villagerGeo.dispose();
     this.renderer.dispose();
   }
 }
