@@ -20,3 +20,7 @@ npm-debug.log*
 Thumbs.db
 .vscode/
 .idea/
+
+# Playwright / goal-loop test artifacts + scratch screenshots
+.playwright-mcp/
+/3d-view-*.png

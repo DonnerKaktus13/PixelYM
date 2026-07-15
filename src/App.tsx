@@ -12,6 +12,7 @@ import { drawKingdomHulls } from "./render/kingdomHulls";
 import { drawNightFog } from "./render/nightFog";
 import { drawVulcanoEffects } from "./render/vulcanoEffects";
 import { drawDayNightOverlay } from "./render/dayNight";
+import { World3DView } from "./render3d/World3D";
 import { BuildHUD, DESTROY_KEY, FARM_KEY, SHOVEL_KEY } from "./ui/BuildHUD";
 import { PortWindow, type PortKind } from "./ui/PortWindow";
 import { WorkbenchWindow } from "./ui/WorkbenchWindow";
@@ -58,6 +59,14 @@ export function App() {
   const cameraRef = useRef<Camera | null>(null);
   const cloudsRef = useRef<Clouds | null>(null);
   const viewSizeRef = useRef({ w: 0, h: 0 });
+  // 3D world view. When `threeD` is on, a WebGL heightmap of the live world
+  // is drawn on its own canvas overlaid on the 2D game. `threeDRef` mirrors
+  // the state so the rAF loop (which only re-subscribes on phase change) can
+  // read the current mode without a stale closure.
+  const threeCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const world3dRef = useRef<World3DView | null>(null);
+  const threeDRef = useRef(false);
+  const [threeD, setThreeD] = useState(false);
   const dragRef = useRef<{ active: boolean; lastX: number; lastY: number; moved: boolean }>({
     active: false, lastX: 0, lastY: 0, moved: false,
   });
@@ -140,7 +149,44 @@ export function App() {
     if (cameraRef.current && stateRef.current) {
       clampCamera(cameraRef.current, stateRef.current.world.width, stateRef.current.world.height, w, h);
     }
+    // Keep the WebGL 3D canvas in lockstep with the 2D one.
+    world3dRef.current?.setSize(w, h);
   }, []);
+
+  // Toggle the 3D world view. Builds the WebGL view lazily on first use and
+  // rebuilds its terrain from the current state each time it's turned on so
+  // territory expansion since the last view is reflected.
+  const toggle3D = useCallback(() => {
+    setThreeD((prev) => {
+      const next = !prev;
+      threeDRef.current = next;
+      if (next) {
+        const canvas = threeCanvasRef.current;
+        const state = stateRef.current;
+        if (canvas && state) {
+          if (!world3dRef.current) world3dRef.current = new World3DView(canvas);
+          const { w, h } = viewSizeRef.current;
+          world3dRef.current.setSize(w, h);
+          world3dRef.current.build(state);
+        }
+      }
+      return next;
+    });
+  }, []);
+
+  // Hotkey: press "3" to flip between the 2D and 3D views while in-world.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.key === "3" || e.key === "v" || e.key === "V") && (phase === "playing" || phase === "spawn")) {
+        const tag = (e.target as HTMLElement | null)?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA") return;
+        e.preventDefault();
+        toggle3D();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [phase, toggle3D]);
 
   // Permanent window-resize listener. Cheap idempotent attach.
   useEffect(() => {
@@ -356,6 +402,12 @@ export function App() {
           lastTick = now;
           if (state.winner !== null) setPhase("ended");
         }
+        // 3D mode: drive the WebGL world view and skip the 2D draw stack
+        // entirely (the simulation above still ticks so the world stays
+        // live under the 3D render).
+        if (threeDRef.current) {
+          world3dRef.current?.render(state, now);
+        } else {
         renderer.incrementalRepaint(state);
         if (!cachedCtx || (cachedCtx.canvas as HTMLCanvasElement) !== canvas) {
           cachedCtx = canvas.getContext("2d")!;
@@ -567,6 +619,7 @@ export function App() {
           ctx.fillRect(8, 8, 70, 18);
           ctx.fillStyle = "#9af0a0";
           ctx.fillText(fpsLabel, 14, 21);
+        }
         }
       }
       rafId = requestAnimationFrame(loop);
@@ -1090,6 +1143,23 @@ export function App() {
           }
         }}
       />
+      {/* WebGL 3D world view. Sits on top of the 2D canvas and is shown only
+          in 3D mode; pointer-events off when hidden so 2D input passes
+          through. The World3DView owns its own orbit-camera listeners. */}
+      <canvas
+        ref={threeCanvasRef}
+        className="game-canvas-3d"
+        style={{ display: threeD ? "block" : "none" }}
+      />
+      {(phase === "playing" || phase === "spawn") && (
+        <button
+          className={`view3d-toggle${threeD ? " active" : ""}`}
+          onClick={toggle3D}
+          title="Toggle 3D world view (press 3)"
+        >
+          {threeD ? "2D" : "3D"}
+        </button>
+      )}
       {error && <div className="loading">Error: {error}</div>}
       {phase === "loading" && !error && <div className="loading">Generating world…</div>}
       {phase === "spawn" && !error && (

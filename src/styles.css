@@ -26,6 +26,44 @@ body { background: #0a0d12; color: #e8eaed; }
 .game-canvas.spawning { cursor: copy; }
 .game-canvas.attack { cursor: pointer; }
 
+/* WebGL 3D world view — overlays the 2D game full-screen when active. Sits
+   above the 2D canvas + HUD (which are hidden underneath in 3D mode) but
+   below the 3D toggle button so the player can always switch back. */
+.game-canvas-3d {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 5;
+  background: #8fbce6;
+  cursor: grab;
+}
+.game-canvas-3d:active { cursor: grabbing; }
+
+/* Floating 2D/3D toggle, top-right corner, always clickable. */
+.view3d-toggle {
+  position: fixed;
+  top: 12px;
+  right: 16px;
+  z-index: 30;
+  min-width: 46px;
+  padding: 8px 14px;
+  background: rgba(12, 16, 22, 0.92);
+  border: 1px solid rgba(150, 200, 255, 0.5);
+  color: #e8eaed;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+}
+.view3d-toggle:hover { background: #1f2730; }
+.view3d-toggle.active {
+  background: rgba(34, 90, 130, 0.95);
+  border-color: rgba(150, 210, 255, 0.85);
+  box-shadow: 0 0 12px rgba(90, 170, 255, 0.4);
+}
+
 .hud-top {
   position: absolute;
   top: 0; left: 0; right: 0;
