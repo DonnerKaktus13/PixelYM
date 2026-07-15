@@ -73,9 +73,17 @@ export class World3DView {
   // updated every frame so the world visibly moves in 3D.
   private villagerGeo = new THREE.ConeGeometry(0.5, 1.7, 6);
   private villagerMesh!: THREE.InstancedMesh;
+  // Trees from world.props (sprite tree_*), instanced conifer cones tinted
+  // by species. This is what turns the terrain into the game's forested world.
+  private treeGeo = new THREE.ConeGeometry(0.6, 2.4, 6);
+  private treeMesh!: THREE.InstancedMesh;
   private dummy = new THREE.Object3D();
   private tmpColor = new THREE.Color();
   private static readonly MAX_VILLAGERS = 4000;
+  private static readonly MAX_TREES = 32000;
+  /** Smoothed per-vertex terrain height (mesh units) — the surface props,
+   *  villagers, and structures are placed on via bilinear lookup. */
+  private heightGrid: Float32Array | null = null;
 
   // Orbit camera state (spherical around `target`).
   private target = new THREE.Vector3(0, 1.5, 0);
@@ -124,6 +132,12 @@ export class World3DView {
     this.villagerMesh.count = 0;
     this.villagerMesh.frustumCulled = false;
     this.scene.add(this.villagerMesh);
+
+    const tmat = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0.0, flatShading: true });
+    this.treeMesh = new THREE.InstancedMesh(this.treeGeo, tmat, World3DView.MAX_TREES);
+    this.treeMesh.count = 0;
+    this.treeMesh.frustumCulled = false;
+    this.scene.add(this.treeMesh);
 
     // Orbit controls — lightweight, self-contained (no OrbitControls import).
     this.onPointerDown = (e) => {
@@ -274,6 +288,17 @@ export class World3DView {
       }
     }
 
+    // Tame isolated needle peaks that survive the area-average: blend each
+    // land vertex's height toward its neighbours. Two gentle passes round the
+    // ridges without flattening broad mountain ranges (a lone spike has low
+    // neighbours pulling it down hard; a range's neighbours are also high).
+    this.smoothHeights(positions, cols, rows, 2);
+
+    // Cache the smoothed surface so props/units sit exactly on the terrain.
+    const heightGrid = new Float32Array(cols * rows);
+    for (let k = 0; k < cols * rows; k++) heightGrid[k] = positions[k * 3 + 1];
+    this.heightGrid = heightGrid;
+
     const indices: number[] = [];
     for (let j = 0; j < rows - 1; j++) {
       for (let i = 0; i < cols - 1; i++) {
@@ -317,8 +342,47 @@ export class World3DView {
     this.water.position.y = 0;
 
     this.buildStructures(state);
+    this.buildTrees(state);
     // Frame the map with the camera's default angle.
     this.radius = MESH_W * 0.95;
+  }
+
+  /** Blur the vertex heightfield in place — `passes` gentle 5-tap averages.
+   *  Uses a scratch copy per pass so the smoothing is symmetric (no bias
+   *  from reading already-updated neighbours). */
+  private smoothHeights(positions: Float32Array, cols: number, rows: number, passes: number): void {
+    const src = new Float32Array(cols * rows);
+    for (let p = 0; p < passes; p++) {
+      for (let k = 0; k < cols * rows; k++) src[k] = positions[k * 3 + 1];
+      for (let j = 0; j < rows; j++) {
+        for (let i = 0; i < cols; i++) {
+          const idx = j * cols + i;
+          let sum = src[idx], cnt = 1;
+          if (i > 0) { sum += src[idx - 1]; cnt++; }
+          if (i < cols - 1) { sum += src[idx + 1]; cnt++; }
+          if (j > 0) { sum += src[idx - cols]; cnt++; }
+          if (j < rows - 1) { sum += src[idx + cols]; cnt++; }
+          // 55% neighbourhood mean, 45% original — keeps ranges, kills spikes.
+          positions[idx * 3 + 1] = src[idx] * 0.45 + (sum / cnt) * 0.55;
+        }
+      }
+    }
+  }
+
+  /** Bilinear terrain height (mesh units) at normalized world coords u,v in
+   *  [0,1]. Props, villagers, and structures sit on this smoothed surface. */
+  private meshHeightAt(u: number, v: number): number {
+    const grid = this.heightGrid;
+    if (!grid) return 0;
+    const cols = GRID_COLS, rows = this.gridRows;
+    const fx = Math.max(0, Math.min(cols - 1, u * (cols - 1)));
+    const fy = Math.max(0, Math.min(rows - 1, v * (rows - 1)));
+    const i0 = Math.floor(fx), j0 = Math.floor(fy);
+    const i1 = Math.min(cols - 1, i0 + 1), j1 = Math.min(rows - 1, j0 + 1);
+    const tx = fx - i0, ty = fy - j0;
+    const a = grid[j0 * cols + i0] * (1 - tx) + grid[j0 * cols + i1] * tx;
+    const b = grid[j1 * cols + i0] * (1 - tx) + grid[j1 * cols + i1] * tx;
+    return a * (1 - ty) + b * ty;
   }
 
   /** Rebuild the structure blocks from state.structures. */
@@ -331,11 +395,8 @@ export class World3DView {
     }
     this.structureGroup.clear();
     const structures = state.structures ?? [];
-    const rgb: RGB = [0, 0, 0];
     for (const s of structures) {
-      const tx = Math.max(0, Math.min(w.width - 1, Math.round(s.x)));
-      const ty = Math.max(0, Math.min(w.height - 1, Math.round(s.y)));
-      const terrainH = this.sample(state, tx, ty, rgb) * VSCALE;
+      const terrainH = this.meshHeightAt(s.x / w.width, s.y / w.height);
       const px = (s.x / w.width - 0.5) * MESH_W;
       const pz = (s.y / w.height - 0.5) * this.meshD;
       const player = state.players[s.ownerId];
@@ -350,6 +411,47 @@ export class World3DView {
       box.position.set(px, Math.max(0.2, terrainH) + height / 2, pz);
       this.structureGroup.add(box);
     }
+  }
+
+  /** (Re)build the forest: every live tree prop becomes an instanced cone,
+   *  tinted by species. Harvested trees are skipped so clear-cut patches
+   *  open up in 3D; if a world has more trees than MAX_TREES we stride-
+   *  sample so the draw stays a single instanced call. */
+  private buildTrees(state: GameState): void {
+    const w = state.world;
+    const props = w.props ?? [];
+    const harvested = state.harvestedProps;
+    const dummy = this.dummy, col = this.tmpColor;
+    let total = 0;
+    for (let i = 0; i < props.length; i++) {
+      if (props[i].sprite.startsWith("tree_")) total++;
+    }
+    const stride = Math.max(1, Math.ceil(total / World3DView.MAX_TREES));
+    let n = 0, seen = 0;
+    for (let i = 0; i < props.length && n < World3DView.MAX_TREES; i++) {
+      const pr = props[i];
+      if (!pr.sprite.startsWith("tree_")) continue;
+      if (harvested && harvested.has(i)) continue;
+      if (++seen % stride !== 0) continue;
+      const u = pr.x / w.width, v = pr.y / w.height;
+      const y = this.meshHeightAt(u, v);
+      const px = (u - 0.5) * MESH_W;
+      const pz = (v - 0.5) * this.meshD;
+      const th = 1.5 + Math.min(1.6, (pr.size || 12) * 0.06); // canopy height
+      dummy.position.set(px, Math.max(0.25, y) + th / 2, pz);
+      dummy.scale.set(1, th / 2.4, 1); // base cone geo is 2.4 tall
+      dummy.rotation.set(0, 0, 0);
+      dummy.updateMatrix();
+      this.treeMesh.setMatrixAt(n, dummy.matrix);
+      if (pr.sprite.startsWith("tree_taiga")) col.setRGB(0.15, 0.33, 0.29);
+      else if (pr.sprite.startsWith("tree_birch")) col.setRGB(0.44, 0.62, 0.32);
+      else col.setRGB(0.19, 0.42, 0.22);
+      this.treeMesh.setColorAt(n, col);
+      n++;
+    }
+    this.treeMesh.count = n;
+    this.treeMesh.instanceMatrix.needsUpdate = true;
+    if (this.treeMesh.instanceColor) this.treeMesh.instanceColor.needsUpdate = true;
   }
 
   /** Re-sample vertex colours in place (kingdoms expand between rebuilds). */
@@ -376,26 +478,25 @@ export class World3DView {
     }
     attr.needsUpdate = true;
     this.buildStructures(state);
+    this.buildTrees(state);
   }
 
   /** Push live villager positions into the instanced cone mesh. Cheap enough
-   *  (one terrain sample per villager) to run every frame, so units glide
-   *  across the terrain as the simulation ticks underneath. Boarded villagers
-   *  (inside a structure) are skipped. */
+   *  (one bilinear height lookup per villager) to run every frame, so units
+   *  glide across the terrain as the simulation ticks underneath. Boarded
+   *  villagers (inside a structure) are skipped. */
   private updateVillagers(state: GameState): void {
     const w = state.world;
     const villagers = state.villagers ?? [];
-    const rgb: RGB = [0, 0, 0];
     let n = 0;
     for (let i = 0; i < villagers.length && n < World3DView.MAX_VILLAGERS; i++) {
       const v = villagers[i];
       if (v.insideStructureId != null) continue;
-      const tx = Math.max(0, Math.min(w.width - 1, Math.round(v.x)));
-      const ty = Math.max(0, Math.min(w.height - 1, Math.round(v.y)));
-      const terrainH = this.sample(state, tx, ty, rgb) * VSCALE;
+      const terrainH = this.meshHeightAt(v.x / w.width, v.y / w.height);
       const px = (v.x / w.width - 0.5) * MESH_W;
       const pz = (v.y / w.height - 0.5) * this.meshD;
       this.dummy.position.set(px, Math.max(0.3, terrainH) + 0.85, pz);
+      this.dummy.scale.set(1, 1, 1); // shared dummy — reset (buildTrees scales y)
       this.dummy.rotation.set(0, 0, 0);
       this.dummy.updateMatrix();
       this.villagerMesh.setMatrixAt(n, this.dummy.matrix);
@@ -444,6 +545,7 @@ export class World3DView {
     this.terrainGeo?.dispose();
     this.structureGeo.dispose();
     this.villagerGeo.dispose();
+    this.treeGeo.dispose();
     this.renderer.dispose();
   }
 }
