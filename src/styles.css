@@ -64,6 +64,25 @@ body { background: #0a0d12; color: #e8eaed; }
   box-shadow: 0 0 12px rgba(90, 170, 255, 0.4);
 }
 
+/* Controls hint shown along the bottom while the 3D view is active. */
+.view3d-hint {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  padding: 7px 16px;
+  background: rgba(12, 16, 22, 0.78);
+  border: 1px solid rgba(150, 200, 255, 0.35);
+  color: #dfe8f2;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  pointer-events: none;
+  user-select: none;
+}
+
 .hud-top {
   position: absolute;
   top: 0; left: 0; right: 0;

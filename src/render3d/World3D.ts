@@ -97,8 +97,21 @@ export class World3DView {
 
   private meshD = 100;
   private gridRows = 130;
+  private worldW = 1;
+  private worldH = 1;
   private lastColorRefresh = 0;
   private disposed = false;
+
+  // Click-to-command: distinguish a click (raycast → jump) from an orbit
+  // drag, and raycast the terrain on a clean click.
+  private downX = 0;
+  private downY = 0;
+  private movedFar = false;
+  private raycaster = new THREE.Raycaster();
+  private ndc = new THREE.Vector2();
+  /** Set by App: called with world-tile coords when the user clicks the 3D
+   *  terrain without dragging, so the 2D camera can jump there. */
+  onPick: ((worldX: number, worldY: number) => void) | null = null;
 
   private readonly onPointerDown: (e: PointerEvent) => void;
   private readonly onPointerMove: (e: PointerEvent) => void;
@@ -143,6 +156,9 @@ export class World3DView {
     this.onPointerDown = (e) => {
       this.dragging = true;
       this.userInteracted = true;
+      this.downX = e.clientX;
+      this.downY = e.clientY;
+      this.movedFar = false;
       this.lastX = e.clientX;
       this.lastY = e.clientY;
       canvas.setPointerCapture?.(e.pointerId);
@@ -153,10 +169,19 @@ export class World3DView {
       const dy = e.clientY - this.lastY;
       this.lastX = e.clientX;
       this.lastY = e.clientY;
+      // Past a few pixels this is an orbit drag, not a click.
+      if (Math.abs(e.clientX - this.downX) + Math.abs(e.clientY - this.downY) > 6) this.movedFar = true;
       this.theta -= dx * 0.005;
       this.phi = Math.max(0.16, Math.min(1.45, this.phi - dy * 0.005));
     };
-    this.onPointerUp = () => { this.dragging = false; };
+    this.onPointerUp = (e) => {
+      const wasClick = this.dragging && !this.movedFar;
+      this.dragging = false;
+      if (wasClick && this.onPick) {
+        const hit = this.pickWorld(e.clientX, e.clientY);
+        if (hit) this.onPick(hit.x, hit.y);
+      }
+    };
     this.onWheel = (e) => {
       e.preventDefault();
       this.userInteracted = true;
@@ -166,6 +191,24 @@ export class World3DView {
     canvas.addEventListener("pointermove", this.onPointerMove);
     window.addEventListener("pointerup", this.onPointerUp);
     canvas.addEventListener("wheel", this.onWheel, { passive: false });
+  }
+
+  /** Raycast the terrain under a screen point and return the world-tile
+   *  coordinate hit, or null if the ray missed the land/sea mesh. */
+  pickWorld(clientX: number, clientY: number): { x: number; y: number } | null {
+    if (!this.terrain) return null;
+    const rect = this.canvas.getBoundingClientRect();
+    this.ndc.set(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -(((clientY - rect.top) / rect.height) * 2 - 1),
+    );
+    this.raycaster.setFromCamera(this.ndc, this.camera);
+    const hits = this.raycaster.intersectObject(this.terrain, false);
+    if (!hits.length) return null;
+    const p = hits[0].point;
+    const u = Math.max(0, Math.min(1, p.x / MESH_W + 0.5));
+    const v = Math.max(0, Math.min(1, p.z / this.meshD + 0.5));
+    return { x: u * this.worldW, y: v * this.worldH };
   }
 
   setSize(w: number, h: number): void {
@@ -263,6 +306,8 @@ export class World3DView {
     const rows = Math.max(2, Math.round(GRID_COLS * (w.height / w.width)));
     this.gridRows = rows;
     this.meshD = MESH_W * (w.height / w.width);
+    this.worldW = w.width;
+    this.worldH = w.height;
 
     const positions = new Float32Array(cols * rows * 3);
     const colors = new Float32Array(cols * rows * 3);

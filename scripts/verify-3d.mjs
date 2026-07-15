@@ -32,6 +32,11 @@ const app = readFileSync(join(root, "src", "App.tsx"), "utf8");
 const wired = app.includes("World3DView") && app.includes("threeCanvasRef") && app.includes("render3d/World3D");
 if (!wired) score(30, "App.tsx does not wire in the World3DView");
 
+// 2b. Click-to-command wiring: 3D module exposes pickWorld/onPick and App
+// binds onPick to move the camera. Soft-gated so a regression is visible.
+const mod = readFileSync(modPath, "utf8");
+const pickWired = mod.includes("pickWorld") && mod.includes("onPick") && app.includes("onPick");
+
 // 3. TypeScript type-check.
 try {
   execSync("npx tsc --noEmit", { cwd: root, stdio: ["ignore", "inherit", "inherit"] });
@@ -48,4 +53,6 @@ try {
   score(80, "vite build failed");
 }
 
-score(100, "3D module present, wired, type-checked, and builds");
+if (!pickWired) score(90, "builds, but click-to-command (pickWorld/onPick) not wired");
+
+score(100, "3D present, wired, click-to-command, type-checked, and builds");

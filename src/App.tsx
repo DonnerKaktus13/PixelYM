@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { buildWorld } from "./game/world";
-import { addVesselWaypoint, assignDockCrewToVessel, assignFarm, assignRockMine, assignTreeChop, autoAssignIdleWorkers, boardVillagerInAirshipPort, boardVillagerInNavalPort, buildStructure, canSpawnVillager, clearVesselPath, commitShovelStroke, countBoardedVillagers, craftTool, createGame, cycleVillagerRole, destroyStructure, findClosestRock, findClosestTree, findFarthestSpawnTile, findHomeTent, getPopulationCap, getPopulationUsed, launchVessel, loadCargoOntoVessel, moveVillagerTo, normalizeResumedState, paintFarmTile, paintHole, paintFill, pointNearOwnedBase, purchaseVesselAtPort, ROCK_PICK_DIST, seedWildlife, SHOVEL_RANGE_FROM_BASE, spawnTribe, spawnVillagerAtHome, stopVillagerTask, structureAt, tileAt, TREE_PICK_DIST, tryDebitAggregate, unloadAllCargo, vesselAtPoint, villagerAt, type GameState } from "./game/state";
+import { addVesselWaypoint, assignDockCrewToVessel, assignFarm, assignRockMine, assignTreeChop, autoAssignIdleWorkers, boardVillagerInAirshipPort, boardVillagerInNavalPort, buildStructure, canSpawnVillager, clearVesselPath, commitShovelStroke, countBoardedVillagers, craftTool, createGame, cycleVillagerRole, destroyStructure, findClosestRock, findClosestTree, findFarthestSpawnTile, findHomeTent, getPopulationCap, getPopulationUsed, launchVessel, loadCargoOntoVessel, moveVillagerTo, normalizeResumedState, paintFarmTile, paintHole, paintFill, pointNearOwnedBase, purchaseVesselAtPort, ROCK_PICK_DIST, seedWildlife, setSpriteAlphaSampler, SHOVEL_RANGE_FROM_BASE, spawnTribe, spawnVillagerAtHome, stopVillagerTask, structureAt, tileAt, TREE_PICK_DIST, tryDebitAggregate, unloadAllCargo, vesselAtPoint, villagerAt, type GameState } from "./game/state";
 import { stepGame, syncVulcanoSprites } from "./game/engine";
 import { isOwnable, type GameConfig } from "./game/types";
 import { Renderer } from "./render/renderer";
 import { clampCamera, makeCamera, screenToWorld, type Camera } from "./render/camera";
-import { loadTextures } from "./render/textures";
+import { loadTextures, spriteAlphaAt } from "./render/textures";
 import { Clouds } from "./render/clouds";
 import { drawAllProps } from "./render/structures";
 import { drawKingdomHulls } from "./render/kingdomHulls";
@@ -164,7 +164,25 @@ export function App() {
         const canvas = threeCanvasRef.current;
         const state = stateRef.current;
         if (canvas && state) {
-          if (!world3dRef.current) world3dRef.current = new World3DView(canvas);
+          if (!world3dRef.current) {
+            world3dRef.current = new World3DView(canvas);
+            // Click-to-command: clicking the 3D map (without dragging) jumps
+            // the 2D game camera to that spot and drops back into 2D so the
+            // player can act there — turning the 3D view into a strategic map.
+            world3dRef.current.onPick = (wx, wy) => {
+              const cam = cameraRef.current;
+              const st = stateRef.current;
+              if (cam && st) {
+                cam.x = wx;
+                cam.y = wy;
+                cam.zoom = Math.max(cam.zoom, 4);
+                clampCamera(cam, st.world.width, st.world.height, viewSizeRef.current.w, viewSizeRef.current.h);
+              }
+              threeDRef.current = false;
+              setThreeD(false);
+              setToast("Jumped to map location");
+            };
+          }
           const { w, h } = viewSizeRef.current;
           world3dRef.current.setSize(w, h);
           world3dRef.current.build(state);
@@ -216,6 +234,9 @@ export function App() {
         // fresh, and the saved state references sprite names by string.
         await loadTextures();
         if (cancelled) return;
+        // Now that sprites are loaded, let placement restrict volcano
+        // exclusion zones to the cone's non-transparent texture pixels.
+        setSpriteAlphaSampler(spriteAlphaAt);
 
         const save = savedStateRef.current;
         let state: GameState;
@@ -1159,6 +1180,11 @@ export function App() {
         >
           {threeD ? "2D" : "3D"}
         </button>
+      )}
+      {threeD && (
+        <div className="view3d-hint">
+          Click the map to jump there · drag to orbit · scroll to zoom
+        </div>
       )}
       {error && <div className="loading">Error: {error}</div>}
       {phase === "loading" && !error && <div className="loading">Generating world…</div>}
