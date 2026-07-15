@@ -84,6 +84,10 @@ export class World3DView {
   /** Smoothed per-vertex terrain height (mesh units) — the surface props,
    *  villagers, and structures are placed on via bilinear lookup. */
   private heightGrid: Float32Array | null = null;
+  // Change-detection so the throttled refresh only rebuilds the (expensive)
+  // tree + structure instances when they actually changed, not every tick.
+  private lastHarvestedSize = -1;
+  private lastStructureCount = -1;
 
   // Orbit camera state (spherical around `target`).
   private target = new THREE.Vector3(0, 1.5, 0);
@@ -121,6 +125,10 @@ export class World3DView {
   constructor(private canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setClearColor(0x8fbce6, 1);
+    // Soft real-time shadows — the single biggest cue that this is a true 3D
+    // scene: the sun throws tree/mountain/structure shadows across the land.
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x8fbce6);
@@ -129,12 +137,21 @@ export class World3DView {
     this.camera = new THREE.PerspectiveCamera(52, 1, 0.5, 3000);
 
     // Sun + sky/ground fill so ridges catch light and valleys stay legible.
-    const hemi = new THREE.HemisphereLight(0xcfe4fb, 0x40381f, 0.95);
+    const hemi = new THREE.HemisphereLight(0xcfe4fb, 0x40381f, 0.9);
     this.scene.add(hemi);
-    const sun = new THREE.DirectionalLight(0xfff1d6, 1.15);
-    sun.position.set(-120, 180, 90);
+    const sun = new THREE.DirectionalLight(0xfff1d6, 1.25);
+    // Lower angle → longer, more readable shadows across the terrain.
+    sun.position.set(-130, 150, 80);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    // Orthographic shadow frustum sized to cover the whole map footprint.
+    const sc = sun.shadow.camera;
+    sc.left = -150; sc.right = 150; sc.top = 150; sc.bottom = -150;
+    sc.near = 5; sc.far = 620;
+    sun.shadow.bias = -0.0004;
+    sun.shadow.normalBias = 0.6;
     this.scene.add(sun);
-    const fill = new THREE.DirectionalLight(0xbcd0ff, 0.35);
+    const fill = new THREE.DirectionalLight(0xbcd0ff, 0.3);
     fill.position.set(140, 80, -120);
     this.scene.add(fill);
 
@@ -144,12 +161,14 @@ export class World3DView {
     this.villagerMesh = new THREE.InstancedMesh(this.villagerGeo, vmat, World3DView.MAX_VILLAGERS);
     this.villagerMesh.count = 0;
     this.villagerMesh.frustumCulled = false;
+    this.villagerMesh.castShadow = true;
     this.scene.add(this.villagerMesh);
 
     const tmat = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0.0, flatShading: true });
     this.treeMesh = new THREE.InstancedMesh(this.treeGeo, tmat, World3DView.MAX_TREES);
     this.treeMesh.count = 0;
     this.treeMesh.frustumCulled = false;
+    this.treeMesh.castShadow = true;
     this.scene.add(this.treeMesh);
 
     // Orbit controls — lightweight, self-contained (no OrbitControls import).
@@ -280,9 +299,10 @@ export class World3DView {
    *  dense ranges stay tall, and territory/biome colours blend at edges. */
   private sampleRegion(
     state: GameState, txC: number, tyC: number, halfX: number, halfY: number, out: RGB,
+    steps = 4,
   ): number {
     const w = state.world;
-    const STEPS = 4;
+    const STEPS = steps;
     const tmp: RGB = [0, 0, 0];
     let hSum = 0, r = 0, g = 0, b = 0, n = 0;
     for (let a = 0; a < STEPS; a++) {
@@ -368,6 +388,8 @@ export class World3DView {
         vertexColors: true, roughness: 0.95, metalness: 0.0, flatShading: false,
       });
       this.terrain = new THREE.Mesh(geo, mat);
+      this.terrain.receiveShadow = true;
+      this.terrain.castShadow = true;
       this.scene.add(this.terrain);
     } else {
       this.terrain.geometry = geo;
@@ -388,6 +410,8 @@ export class World3DView {
 
     this.buildStructures(state);
     this.buildTrees(state);
+    this.lastStructureCount = state.structures ? state.structures.length : 0;
+    this.lastHarvestedSize = state.harvestedProps ? state.harvestedProps.size : 0;
     // Frame the map with the camera's default angle.
     this.radius = MESH_W * 0.95;
   }
@@ -454,6 +478,8 @@ export class World3DView {
       const height = 1.4 + Math.min(4, (s.size || 1) * 0.5);
       box.scale.y = height;
       box.position.set(px, Math.max(0.2, terrainH) + height / 2, pz);
+      box.castShadow = true;
+      box.receiveShadow = true;
       this.structureGroup.add(box);
     }
   }
@@ -514,7 +540,10 @@ export class World3DView {
       const tyC = (j / (rows - 1)) * (w.height - 1);
       for (let i = 0; i < cols; i++) {
         const txC = (i / (cols - 1)) * (w.width - 1);
-        this.sampleRegion(state, txC, tyC, halfX, halfY, rgb);
+        // Lighter 2x2 sampling on the live refresh (build uses 4x4) — the
+        // heightfield is fixed, only the owner tint changes, so a cheaper
+        // colour resample avoids a periodic frame hitch.
+        this.sampleRegion(state, txC, tyC, halfX, halfY, rgb, 2);
         const vi = (j * cols + i) * 3;
         colors[vi] = rgb[0] / 255;
         colors[vi + 1] = rgb[1] / 255;
@@ -522,8 +551,19 @@ export class World3DView {
       }
     }
     attr.needsUpdate = true;
-    this.buildStructures(state);
-    this.buildTrees(state);
+    // Only rebuild the heavy instanced sets when they actually changed —
+    // structures added/removed, or trees harvested/regrown. The territory
+    // colour resample above still runs every refresh so kingdoms stay live.
+    const sc = state.structures ? state.structures.length : 0;
+    if (sc !== this.lastStructureCount) {
+      this.buildStructures(state);
+      this.lastStructureCount = sc;
+    }
+    const hs = state.harvestedProps ? state.harvestedProps.size : 0;
+    if (hs !== this.lastHarvestedSize) {
+      this.buildTrees(state);
+      this.lastHarvestedSize = hs;
+    }
   }
 
   /** Push live villager positions into the instanced cone mesh. Cheap enough
@@ -560,7 +600,7 @@ export class World3DView {
     if (!this.terrain) this.build(state);
 
     // Periodically refresh territory colours + structures (throttled).
-    if (now - this.lastColorRefresh > 1500) {
+    if (now - this.lastColorRefresh > 2500) {
       this.refreshColors(state);
       this.lastColorRefresh = now;
     }
